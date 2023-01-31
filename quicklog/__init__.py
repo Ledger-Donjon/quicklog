@@ -39,19 +39,16 @@ def is_valid_rid(rid: str) -> bool:
     return (len(rid) >= 10) and (re.fullmatch(r"[0-9a-f]+", rid) is not None)
 
 
-def get_trace_path(rid: str) -> str:
-    """
-    :return: Path of a trace in the database, given the record Id.
-
-    :param rid: Record Id. Must be a lowercase hexadecimal string with at
-        minimum 10 characters.
-
-    This requires the environment variable `TRACESDIR` to be set.
-    """
-    assert is_valid_rid(rid)
-    traces_dir = os.environ["TRACESDIR"]
-    return os.path.join(
-        traces_dir, rid[0:2], rid[2:4], rid[4:6], rid[6:8], rid[8:] + ".npy"
+def __get_trace_dir_and_filename(rid: bytes) -> str:
+    return (
+        os.path.join(
+            traces_dir,
+            f"{rid[0]:02x}",
+            f"{rid[1]:02x}",
+            f"{rid[2]:02x}",
+            f"{rid[3]:02x}",
+        ),
+        rid[4:].hex() + ".npy",
     )
 
 
@@ -59,6 +56,9 @@ def save_trace(record, trace, sample_rate=None, position=None):
     """
     Save given trace in the trace database using given record Id, and set
     trace properties to the current record.
+
+    This creates one trace file for each trace. To group traces in batch files,
+    use the class :class:`TraceBatchWriter`.
 
     :param record: Current experiment record
     :param trace: Trace data
@@ -68,15 +68,35 @@ def save_trace(record, trace, sample_rate=None, position=None):
     traces_dir = os.environ["TRACESDIR"]
     rid = record["id"]
     assert is_valid_rid(rid)
-    trace_dir = os.path.join(traces_dir, rid[0:2], rid[2:4], rid[4:6], rid[6:8])
+    trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(rid))
     if not os.path.exists(trace_dir):
         os.makedirs(trace_dir)
-    trace_path = os.path.join(trace_dir, rid[8:] + ".npy")
+    trace_path = os.path.join(trace_dir, filename)
     if sample_rate is not None:
         record["trace.sample_rate"] = sample_rate
     if position is not None:
         record["trace.position"] = position
     np.save(trace_path, trace)
+
+
+def load_trace(record: dict):
+    """
+    Loads the trace corresponding to a record. Trace can either be saved in a
+    single file or in a batch file.
+
+    :param record: Experiment record
+    """
+    if "bid" in record:
+        # Trace is saved in a batch file
+        trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(record["bid"]))
+        with open(os.path.join(trace_dir, filename), "rb") as f:
+            f.seek(record["toff"])
+            trace = np.load(f)
+        return trace
+    else:
+        # Trace is saved in a single file
+        trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(record["id"]))
+        return np.load(os.path.join(trace_dir, filename))
 
 
 class Log:
@@ -101,3 +121,54 @@ def read_log(path: str = "log"):
     """
     for line in open(path, "r"):
         yield json.loads(line)
+
+
+class TraceBatchWriter:
+    """
+    Allows storing multiple traces into single files, which can be usefull to increase
+    performance of traces analysis, such as side-channel attacks.
+
+    When used, log records will have three more columns:
+    - `bid`: Batch ID, randomly generated unique identifier (hex string)
+    - `tid`: Trace index in the batch (int)
+    - `toff`: Trace offset in the batch file
+
+    In batch files, traces are stored separately as numpy objects. It is not
+    stored as a numpy array of traces, to make single trace access possible and
+    efficient. The batch file path is built from the `bid` field.
+
+    The trace offset allows loading a single trace from a batch without reading
+    all the batch file.
+
+    Everytime a new trace is recorded, it is immediately saved to disk by
+    appending the data to the opened batch file.
+    """
+
+    def __init__(self, batch_size: int = 1000):
+        assert batch_size >= 1
+        self.batch_size = batch_size
+        self.bid = gen_rand_id()
+        self.tid = 0  # Index of next trace in the current batch
+        self.file = None
+
+    def save_trace(self, record, trace, sample_rate=None, position=None):
+        if self.file is None:
+            assert self.tid == 0
+            trace_dir, filename = __get_trace_dir_and_filename(self.bid)
+            if not os.path.exists(trace_dir):
+                os.makedirs(trace_dir)
+            self.file = open(path, "wb")
+        record["bid"] = self.bid
+        record["tid"] = self.tid
+        record["toff"] = self.file.tell()  # Trace offset in the file
+        if sample_rate is not None:
+            record["trace.sample_rate"] = sample_rate
+        if position is not None:
+            record["trace.position"] = position
+        np.save(f, trace)
+        self.tid += 1
+        if self.tid == self.batch_size:
+            self.file.close()
+            self.file = None
+            self.bid = gen_rand_id()
+            self.tid = 0
