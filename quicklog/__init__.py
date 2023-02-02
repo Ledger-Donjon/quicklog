@@ -39,7 +39,8 @@ def is_valid_rid(rid: str) -> bool:
     return (len(rid) >= 10) and (re.fullmatch(r"[0-9a-f]+", rid) is not None)
 
 
-def __get_trace_dir_and_filename(rid: bytes) -> str:
+def get_trace_dir_and_filename(rid: bytes) -> str:
+    traces_dir = os.environ["TRACESDIR"]
     return (
         os.path.join(
             traces_dir,
@@ -52,7 +53,12 @@ def __get_trace_dir_and_filename(rid: bytes) -> str:
     )
 
 
-def save_trace(record, trace, sample_rate=None, position=None):
+def get_trace_path(rid: bytes) -> str:
+    trace_dir, filename = get_trace_dir_and_filename(rid)
+    return os.path.join(trace_dir, filename)
+
+
+def save_trace(record, trace, sample_rate=None, position=None, delay=None):
     """
     Save given trace in the trace database using given record Id, and set
     trace properties to the current record.
@@ -65,10 +71,9 @@ def save_trace(record, trace, sample_rate=None, position=None):
     :param sample_rate: Trace sample rate
     :param position: Acquisition horizontal position
     """
-    traces_dir = os.environ["TRACESDIR"]
     rid = record["id"]
     assert is_valid_rid(rid)
-    trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(rid))
+    trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(rid))
     if not os.path.exists(trace_dir):
         os.makedirs(trace_dir)
     trace_path = os.path.join(trace_dir, filename)
@@ -76,27 +81,35 @@ def save_trace(record, trace, sample_rate=None, position=None):
         record["trace.sample_rate"] = sample_rate
     if position is not None:
         record["trace.position"] = position
+    if delay is not None:
+        record["trace.delay"] = delay
     np.save(trace_path, trace)
 
 
-def load_trace(record: dict):
+def load_trace(record: dict) -> Optional[np.array]:
     """
     Loads the trace corresponding to a record. Trace can either be saved in a
     single file or in a batch file.
 
     :param record: Experiment record
+    :return: Numpy trace, or None if the trace file does not exist.
     """
     if "bid" in record:
         # Trace is saved in a batch file
-        trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(record["bid"]))
-        with open(os.path.join(trace_dir, filename), "rb") as f:
-            f.seek(record["toff"])
-            trace = np.load(f)
-        return trace
+        trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(record["bid"]))
+        path = os.path.join(trace_dir, filename)
+        if os.path.exists(path):
+            with open(os.path.join(trace_dir, filename), "rb") as f:
+                f.seek(record["toff"])
+                trace = np.load(f)
+            return trace
     else:
         # Trace is saved in a single file
-        trace_dir, filename = __get_trace_dir_and_filename(bytes.fromhex(record["id"]))
-        return np.load(os.path.join(trace_dir, filename))
+        trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(record["id"]))
+        path = os.path.join(trace_dir, filename)
+        if os.path.exists(path):
+            return np.load(os.path.join(trace_dir, filename))
+    return None
 
 
 class Log:
@@ -151,21 +164,24 @@ class TraceBatchWriter:
         self.tid = 0  # Index of next trace in the current batch
         self.file = None
 
-    def save_trace(self, record, trace, sample_rate=None, position=None):
+    def save_trace(self, record, trace, sample_rate=None, position=None, delay=None):
         if self.file is None:
             assert self.tid == 0
-            trace_dir, filename = __get_trace_dir_and_filename(self.bid)
+            trace_dir, filename = get_trace_dir_and_filename(self.bid)
             if not os.path.exists(trace_dir):
                 os.makedirs(trace_dir)
+            path = os.path.join(trace_dir, filename)
             self.file = open(path, "wb")
-        record["bid"] = self.bid
+        record["bid"] = self.bid.hex()
         record["tid"] = self.tid
         record["toff"] = self.file.tell()  # Trace offset in the file
         if sample_rate is not None:
             record["trace.sample_rate"] = sample_rate
         if position is not None:
             record["trace.position"] = position
-        np.save(f, trace)
+        if delay is not None:
+            record["trace.delay"] = delay
+        np.save(self.file, trace)
         self.tid += 1
         if self.tid == self.batch_size:
             self.file.close()

@@ -46,9 +46,13 @@ def rmtraces(log):
     lines = log.readlines()
     for line in progressbar.progressbar(lines):
         record = json.loads(line)
-        rid = record["id"]
+        if "bid" in record:
+            # Trace file saved in batch
+            rid = record["bid"]
+        else:
+            rid = record["id"]
         if is_valid_rid(rid):
-            trace_path = get_trace_path(rid)
+            trace_path = get_trace_path(bytes.fromhex(rid))
             try:
                 size = os.path.getsize(trace_path)
                 os.remove(trace_path)
