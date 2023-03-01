@@ -188,3 +188,30 @@ class TraceBatchWriter:
             self.file = None
             self.bid = gen_rand_id()
             self.tid = 0
+
+
+class CachedTraceLoader:
+    def __init__(self):
+        self.current_bid = None
+        self.traces = []
+
+    def load_trace(self, record: dict):
+        if "bid" in record:
+            bid = bytes.fromhex(record["bid"])
+            if bid != self.current_bid:
+                self.__load_batch(bid)
+            tid = record["tid"]
+            return self.traces[tid]
+        else:
+            load_trace(record)
+
+    def __load_batch(self, bid: bytes):
+        with open(get_trace_path(bid), "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(0)
+            self.traces.clear()
+            while f.tell() < size:
+                self.traces.append(np.load(f))
+        self.current_bid = bid
+
