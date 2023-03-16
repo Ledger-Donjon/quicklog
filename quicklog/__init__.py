@@ -39,8 +39,16 @@ def is_valid_rid(rid: str) -> bool:
     return (len(rid) >= 10) and (re.fullmatch(r"[0-9a-f]+", rid) is not None)
 
 
-def get_trace_dir_and_filename(rid: bytes) -> str:
-    traces_dir = os.environ["TRACESDIR"]
+def get_trace_dir_and_filename(rid: bytes, traces_dir: Optional[str] = None) -> str:
+    """
+    Returns trace directory and filename corresponding to the given id.
+
+    :param rid: Record or batch identifier
+    :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
+        variable is used.
+    """
+    if traces_dir is None:
+        traces_dir = os.environ["TRACESDIR"]
     return (
         os.path.join(
             traces_dir,
@@ -53,8 +61,8 @@ def get_trace_dir_and_filename(rid: bytes) -> str:
     )
 
 
-def get_trace_path(rid: bytes) -> str:
-    trace_dir, filename = get_trace_dir_and_filename(rid)
+def get_trace_path(rid: bytes, traces_dir: Optional[str] = None) -> str:
+    trace_dir, filename = get_trace_dir_and_filename(rid, traces_dir)
     return os.path.join(trace_dir, filename)
 
 
@@ -86,17 +94,21 @@ def save_trace(record, trace, sample_rate=None, position=None, delay=None):
     np.save(trace_path, trace)
 
 
-def load_trace(record: dict) -> Optional[np.array]:
+def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.array]:
     """
     Loads the trace corresponding to a record. Trace can either be saved in a
     single file or in a batch file.
 
     :param record: Experiment record
+    :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
+        variable is used.
     :return: Numpy trace, or None if the trace file does not exist.
     """
     if "bid" in record:
         # Trace is saved in a batch file
-        trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(record["bid"]))
+        trace_dir, filename = get_trace_dir_and_filename(
+            bytes.fromhex(record["bid"]), traces_dir
+        )
         path = os.path.join(trace_dir, filename)
         if os.path.exists(path):
             with open(os.path.join(trace_dir, filename), "rb") as f:
@@ -191,9 +203,10 @@ class TraceBatchWriter:
 
 
 class CachedTraceLoader:
-    def __init__(self):
+    def __init__(self, traces_dir: Optional[str] = None):
         self.current_bid = None
         self.traces = []
+        self.traces_dir = traces_dir
 
     def load_trace(self, record: dict):
         if "bid" in record:
@@ -206,7 +219,7 @@ class CachedTraceLoader:
             load_trace(record)
 
     def __load_batch(self, bid: bytes):
-        with open(get_trace_path(bid), "rb") as f:
+        with open(get_trace_path(bid, self.traces_dir), "rb") as f:
             f.seek(0, os.SEEK_END)
             size = f.tell()
             f.seek(0)
@@ -214,4 +227,3 @@ class CachedTraceLoader:
             while f.tell() < size:
                 self.traces.append(np.load(f))
         self.current_bid = bid
-

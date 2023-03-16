@@ -2,6 +2,7 @@ from . import *
 import click
 import json
 import progressbar
+import shutil
 
 
 @click.group()
@@ -82,6 +83,61 @@ def rmtraces(log):
     print(f"{count} files removed")
     size_gb = total_size / (1024**3)
     print(f"{size_gb:.3f} GB freed")
+
+
+def copy(fid: bytes, from_db: str, to_db: str) -> Optional[int]:
+    from_trace_dir, from_filename = get_trace_dir_and_filename(fid, from_db)
+    from_path = os.path.join(from_trace_dir, from_filename)
+    to_trace_dir, to_filename = get_trace_dir_and_filename(fid, to_db)
+    to_path = os.path.join(to_trace_dir, to_filename)
+    if os.path.exists(from_path):
+        size = os.path.getsize(os.path.join(from_trace_dir, from_filename))
+        if not os.path.exists(to_trace_dir):
+            os.makedirs(to_trace_dir)
+        shutil.copy(from_path, to_path)
+        return size
+
+
+@cli.command(help="Copy traces from a database to another")
+@click.argument("log", type=click.File("r"))
+@click.argument("from_db")
+@click.argument("to_db")
+def cp(log, from_db, to_db):
+    total_size = 0
+    trace_count = 0
+    existing = 0
+    existing_batch_file_count = 0
+    batches_already_seen = set()
+    lines = log.readlines()
+    for line in progressbar.progressbar(lines):
+        record = json.loads(line)
+        if "bid" in record:
+            # Trace file saved in batch
+            bid = record["bid"]
+            if is_valid_rid(bid):
+                bid = bytes.fromhex(bid)
+                trace_count += 1
+                if bid not in batches_already_seen:
+                    batches_already_seen.add(bid)
+                    size = copy(bid, from_db, to_db)
+                    if size is not None:
+                        total_size += size
+                        existing_batch_file_count += 1
+        else:
+            rid = record["id"]
+            if is_valid_rid(rid):
+                rid = bytes.fromhex(rid)
+                trace_count += 1
+                size = copy(rid, from_db, to_db)
+                if size is not None:
+                    total_size += size
+                    existing += 1
+    print(f"{len(lines)} records")
+    print(f"{trace_count} traces")
+    print(f"{existing} trace copied")
+    print(f"{existing_batch_file_count} batch files copied")
+    size_gb = total_size / (1024**3)
+    print(f"{size_gb:.3f} GB copied")
 
 
 if __name__ == "__main__":
