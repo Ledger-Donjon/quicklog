@@ -33,3 +33,8 @@ Clone the repository then use pip3 to install the package.
 
     pip3 install quicklog
 
+## Licensing
+
+Quicklog is released under GNU Lesser General Public Licence version 3 (LGPLv3).
+See COPYING and COPYING.LESSER for license details.
+
