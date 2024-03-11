@@ -66,11 +66,15 @@ def get_trace_dir_and_filename(
 
     :param rid: Record or batch identifier
     :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
-        variable is used.
+        variable is used. If it is not defined, `traces` directory (`./traces`)
+        is used.
     :return: A tuple containing the trace path and the file name.
     """
     if traces_dir is None:
-        traces_dir = os.environ["TRACESDIR"]
+        if "TRACESDIR" in os.environ:
+            traces_dir = os.environ["TRACESDIR"]
+        else:
+            traces_dir = os.path.join(os.curdir, "traces")
     return (
         os.path.join(
             traces_dir,
@@ -100,6 +104,7 @@ def save_trace(record, trace, sample_rate=None, position=None, delay=None):
     :param trace: Trace data
     :param sample_rate: Trace sample rate
     :param position: Acquisition horizontal position
+    :param delay: Indicate a delay information
     """
     rid = record["id"]
     assert is_valid_rid(rid)
