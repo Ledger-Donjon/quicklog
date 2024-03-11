@@ -23,7 +23,7 @@ import random
 import datetime
 import numpy as np
 import re
-from typing import Optional
+from typing import Optional, cast
 
 
 def gen_rand_id() -> bytes:
@@ -58,13 +58,16 @@ def is_valid_rid(rid: str) -> bool:
     return (len(rid) >= 10) and (re.fullmatch(r"[0-9a-f]+", rid) is not None)
 
 
-def get_trace_dir_and_filename(rid: bytes, traces_dir: Optional[str] = None) -> str:
+def get_trace_dir_and_filename(
+    rid: bytes, traces_dir: Optional[str] = None
+) -> tuple[str, str]:
     """
     Returns trace directory and filename corresponding to the given id.
 
     :param rid: Record or batch identifier
     :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
         variable is used.
+    :return: A tuple containing the trace path and the file name.
     """
     if traces_dir is None:
         traces_dir = os.environ["TRACESDIR"]
@@ -113,7 +116,7 @@ def save_trace(record, trace, sample_rate=None, position=None, delay=None):
     np.save(trace_path, trace)
 
 
-def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.array]:
+def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.ndarray]:
     """
     Loads the trace corresponding to a record. Trace can either be saved in a
     single file or in a batch file.
@@ -132,14 +135,14 @@ def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.ar
         if os.path.exists(path):
             with open(os.path.join(trace_dir, filename), "rb") as f:
                 f.seek(record["toff"])
-                trace = np.load(f)
+                trace = cast(np.ndarray, (np.array(np.load(f))))
             return trace
     else:
         # Trace is saved in a single file
         trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(record["id"]))
         path = os.path.join(trace_dir, filename)
         if os.path.exists(path):
-            return np.load(os.path.join(trace_dir, filename))
+            return cast(np.ndarray, (np.load(os.path.join(trace_dir, filename))))
     return None
 
 

@@ -17,11 +17,13 @@
 # Copyright 2023 Ledger SAS, written by Olivier Hériveaux
 
 
-from . import *
+from . import is_valid_rid, get_trace_path, get_trace_dir_and_filename
+from typing import Optional
 import click
 import json
 import progressbar
 import shutil
+import os
 
 
 @click.group()
@@ -38,7 +40,7 @@ def info(log):
     existing_batch_file_count = 0
     batches_already_seen = set()
     lines = log.readlines()
-    for line in progressbar.progressbar(lines):
+    for line in progressbar.ProgressBar()(lines):
         record = json.loads(line)
         if "bid" in record:
             # Trace file saved in batch
@@ -64,7 +66,7 @@ def info(log):
                     size = os.path.getsize(trace_path)
                     total_size += size
                     existing += 1
-                except OSError as e:
+                except OSError:
                     pass
     print(f"{len(lines)} records")
     print(f"{trace_count} traces")
@@ -83,7 +85,7 @@ def rmtraces(log):
     total_size = 0
     count = 0
     lines = log.readlines()
-    for line in progressbar.progressbar(lines):
+    for line in progressbar.ProgressBar()(lines):
         record = json.loads(line)
         if "bid" in record:
             # Trace file saved in batch
@@ -97,7 +99,7 @@ def rmtraces(log):
                 os.remove(trace_path)
                 count += 1
                 total_size += size
-            except OSError as e:
+            except OSError:
                 pass
     print(f"{count} files removed")
     size_gb = total_size / (1024**3)
@@ -128,7 +130,7 @@ def cp(log, from_db, to_db):
     existing_batch_file_count = 0
     batches_already_seen = set()
     lines = log.readlines()
-    for line in progressbar.progressbar(lines):
+    for line in progressbar.ProgressBar()(lines):
         record = json.loads(line)
         if "bid" in record:
             # Trace file saved in batch
