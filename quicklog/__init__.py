@@ -92,7 +92,14 @@ def get_trace_path(rid: bytes, traces_dir: Optional[str] = None) -> str:
     return os.path.join(trace_dir, filename)
 
 
-def save_trace(record, trace, sample_rate=None, position=None, delay=None):
+def save_trace(
+    record: dict,
+    trace,
+    sample_rate: Optional[float] = None,
+    position: Optional[float] = None,
+    delay: Optional[float] = None,
+    traces_dir: Optional[str] = None,
+):
     """
     Save given trace in the trace database using given record Id, and set
     trace properties to the current record.
@@ -105,10 +112,13 @@ def save_trace(record, trace, sample_rate=None, position=None, delay=None):
     :param sample_rate: Trace sample rate
     :param position: Acquisition horizontal position
     :param delay: Indicate a delay information
+    :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
+        variable is used. If it is not defined, `traces` directory (`./traces`)
+        is used.
     """
     rid = record["id"]
     assert is_valid_rid(rid)
-    trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(rid))
+    trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(rid), traces_dir)
     if not os.path.exists(trace_dir):
         os.makedirs(trace_dir)
     trace_path = os.path.join(trace_dir, filename)
@@ -128,7 +138,8 @@ def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.nd
 
     :param record: Experiment record
     :param traces_dir: Traces database directory. If None, `TRACESDIR` environment
-        variable is used.
+        variable is used. If it is not defined, `traces` directory (`./traces`)
+        is used.
     :return: Numpy trace, or None if the trace file does not exist.
     """
     if "bid" in record:
@@ -144,7 +155,9 @@ def load_trace(record: dict, traces_dir: Optional[str] = None) -> Optional[np.nd
             return trace
     else:
         # Trace is saved in a single file
-        trace_dir, filename = get_trace_dir_and_filename(bytes.fromhex(record["id"]))
+        trace_dir, filename = get_trace_dir_and_filename(
+            bytes.fromhex(record["id"]), traces_dir
+        )
         path = os.path.join(trace_dir, filename)
         if os.path.exists(path):
             return cast(np.ndarray, (np.load(os.path.join(trace_dir, filename))))
@@ -203,10 +216,18 @@ class TraceBatchWriter:
         self.tid = 0  # Index of next trace in the current batch
         self.file = None
 
-    def save_trace(self, record, trace, sample_rate=None, position=None, delay=None):
+    def save_trace(
+        self,
+        record: dict,
+        trace,
+        sample_rate: Optional[float] = None,
+        position: Optional[float] = None,
+        delay: Optional[float] = None,
+        traces_dir: Optional[str] = None,
+    ):
         if self.file is None:
             assert self.tid == 0
-            trace_dir, filename = get_trace_dir_and_filename(self.bid)
+            trace_dir, filename = get_trace_dir_and_filename(self.bid, traces_dir)
             if not os.path.exists(trace_dir):
                 os.makedirs(trace_dir)
             path = os.path.join(trace_dir, filename)
