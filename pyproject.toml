@@ -13,6 +13,8 @@ numpy = "*"
 click = "*"
 progressbar = "*"
 
+[tool.poetry.dev-dependencies]
+pytest = "*"
 
 [tool.poetry.scripts]
 quicklog = 'quicklog.__main__:cli'
