@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "donjon-quicklog"
+packages = [{ include = "quicklog", from = "." }]
+version = "1.0.2"
+description = ""
+authors = ["Olivier Hériveaux <olivier.heriveaux@ledger.fr>"]
+license = "LGPL-3.0-or-later"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9 <4"
+numpy = "*"
+click = "*"
+progressbar = "*"
+
+
+[tool.poetry.scripts]
+quicklog = 'quicklog.__main__:cli'
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
